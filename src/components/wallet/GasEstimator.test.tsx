@@ -4,7 +4,8 @@ import { GasEstimator } from './GasEstimator';
 import type { FeeBreakdown } from '@/hooks/useGasEstimate';
 
 vi.mock('@/utils/currencyFormatter', () => ({
-  formatCurrency: (val: string | number) => Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 7 }),
+  formatCurrency: (val: string | number) =>
+    Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 7 }),
 }));
 
 describe('GasEstimator', () => {

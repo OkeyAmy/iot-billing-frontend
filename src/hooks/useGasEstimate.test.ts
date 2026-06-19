@@ -32,7 +32,9 @@ vi.mock('@/utils/currencyFormatter', () => ({
 
 vi.mock('@/utils/errorDecoder', () => ({
   ErrorDecoder: class {
-    tryDecode(s: string) { return s; }
+    tryDecode(s: string) {
+      return s;
+    }
   },
 }));
 
@@ -50,7 +52,9 @@ describe('useGasEstimate', () => {
 
   it('resets state on reset call', () => {
     const { result } = renderHook(() => useGasEstimate());
-    act(() => { result.current.reset(); });
+    act(() => {
+      result.current.reset();
+    });
     expect(result.current.feeBreakdown).toBeNull();
     expect(result.current.estimating).toBe(false);
     expect(result.current.simulationError).toBeNull();

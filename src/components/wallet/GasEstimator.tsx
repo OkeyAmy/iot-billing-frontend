@@ -31,7 +31,9 @@ function useXlmUsdRate(): number | null {
       }
     };
     fetchRate();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return rate;
@@ -144,9 +146,7 @@ export function GasEstimator({ feeBreakdown, estimating, error }: GasEstimatorPr
             <Spinner />
           ) : (
             <span className="font-mono text-xs font-bold text-green-400">
-              {feeBreakdown
-                ? `${formatCurrency(feeBreakdown.total)} XLM`
-                : '---'}
+              {feeBreakdown ? `${formatCurrency(feeBreakdown.total)} XLM` : '---'}
               {feeBreakdown && usdRate && (
                 <span className="ml-1 text-[10px] text-gray-500">
                   (${formatCurrency((Number(feeBreakdown.total) * usdRate).toFixed(2))})

@@ -104,7 +104,9 @@ describe('ErrorDecoder', () => {
 
   describe('simulation error patterns', () => {
     it('decodes budget exceeded simulation errors', () => {
-      expect(decoder.tryDecode('hostError: budget exceeded during execution')).toContain('budget exceeded');
+      expect(decoder.tryDecode('hostError: budget exceeded during execution')).toContain(
+        'budget exceeded',
+      );
     });
 
     it('decodes CPU limit simulation errors', () => {
@@ -124,15 +126,21 @@ describe('ErrorDecoder', () => {
     });
 
     it('decodes expired entry errors', () => {
-      expect(decoder.tryDecode('expired ledger entry referenced')).toContain('expired ledger entry');
+      expect(decoder.tryDecode('expired ledger entry referenced')).toContain(
+        'expired ledger entry',
+      );
     });
 
     it('decodes restoration required errors', () => {
-      expect(decoder.tryDecode('restore is required before submission')).toContain('restoration is required');
+      expect(decoder.tryDecode('restore is required before submission')).toContain(
+        'restoration is required',
+      );
     });
 
     it('decodes classic fee exceeded errors', () => {
-      expect(decoder.tryDecode('classic fee exceeds the maximum')).toContain('classic (inclusion) fee');
+      expect(decoder.tryDecode('classic fee exceeds the maximum')).toContain(
+        'classic (inclusion) fee',
+      );
     });
   });
 
