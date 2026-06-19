@@ -19,9 +19,14 @@ function estimateGridMemory(fleets: FleetView[]): number {
   }
 }
 
-function getFleetRegion(fleet: FleetView): string {
-  if ('region' in fleet && typeof (fleet as any).region === 'string') {
-    return (fleet as any).region;
+interface DisplayFleet extends FleetView {
+  fleetCount?: number;
+  region?: string;
+}
+
+function getFleetRegion(fleet: DisplayFleet): string {
+  if (fleet.region) {
+    return fleet.region;
   }
   const nameParts = fleet.name.split(/[-_ ]/);
   if (nameParts.length > 1 && nameParts[0].length >= 2 && nameParts[0].length <= 5) {
@@ -51,7 +56,7 @@ export function FleetCanvasGrid({ fleets, cellSize = 80 }: FleetCanvasGridProps)
   const isAggregated = zoomLevel < 0.5 || isMemoryExceeded;
 
   // Aggregate fleets if in cluster/aggregate mode
-  const displayData = useCallback(() => {
+  const displayData = useCallback((): DisplayFleet[] => {
     if (!isAggregated) {
       return fleets;
     }
@@ -95,7 +100,7 @@ export function FleetCanvasGrid({ fleets, cellSize = 80 }: FleetCanvasGridProps)
       if (agg.activeFleets > 0) status = 'active';
       else if (agg.degradedFleets > 0) status = 'degraded';
 
-      const regionFleet: FleetView & { fleetCount: number } = {
+      const regionFleet: DisplayFleet = {
         fleetId: `region-${region.toLowerCase().replace(/\s+/g, '-')}`,
         name: region,
         deviceCount: agg.deviceCount,
@@ -230,7 +235,7 @@ export function FleetCanvasGrid({ fleets, cellSize = 80 }: FleetCanvasGridProps)
     ctx.fillRect(xMin, yMin, xMax - xMin, yMax - yMin);
 
     // Group cells by status color to minimize fillStyle/strokeStyle context changes
-    const cellsByColor: Record<string, { cell: PositionResult; fleet: FleetView; isHovered: boolean }[]> = {
+    const cellsByColor: Record<string, { cell: PositionResult; fleet: DisplayFleet; isHovered: boolean }[]> = {
       '#00ff88': [], // Active
       '#ffaa00': [], // Degraded
       '#ff4444': [], // Inactive
@@ -281,8 +286,8 @@ export function FleetCanvasGrid({ fleets, cellSize = 80 }: FleetCanvasGridProps)
         ctx.fillText(fleet.name.slice(0, isAggregated ? 12 : 8), cell.x + 6, cell.y + textYOffset);
         
         // Count string
-        const countText = isAggregated
-          ? `${(fleet as any).fleetCount} fleets`
+        const countText = (isAggregated && fleet.fleetCount !== undefined)
+          ? `${fleet.fleetCount} fleets`
           : `${fleet.activeCount}/${fleet.deviceCount}`;
         
         ctx.fillText(countText, cell.x + 6, cell.y + textYOffset + lineSpacing);

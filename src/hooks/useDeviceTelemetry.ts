@@ -28,7 +28,7 @@ export function useSingleDeviceTelemetry(deviceId: string) {
 /**
  * Estimates the memory footprint of telemetry or fleet data in bytes
  */
-export function estimateTelemetrySize(data: any): number {
+export function estimateTelemetrySize(data: unknown): number {
   try {
     return JSON.stringify(data).length * 2;
   } catch {
@@ -57,8 +57,9 @@ export function preAggregateFleetData(fleets: FleetView[]): FleetView[] {
   }>();
 
   const getRegion = (fleet: FleetView) => {
-    if ('region' in fleet && typeof (fleet as any).region === 'string') {
-      return (fleet as any).region;
+    const regionFleet = fleet as FleetView & { region?: string };
+    if (regionFleet.region) {
+      return regionFleet.region;
     }
     const nameParts = fleet.name.split(/[-_ ]/);
     if (nameParts.length > 1 && nameParts[0].length >= 2 && nameParts[0].length <= 5) {
