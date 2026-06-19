@@ -60,47 +60,33 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Run bundle analyzer build
-        run: ANALYZE=true npm run build
-        env:
-          ANALYZE: "true"
-      - name: Upload bundle report artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: bundle-report
-          path: .next/analyze/
-          retention-days: 14
+      - name: Production build (required for size check)
+        run: npm run build
       - name: Check initial route bundle size (< 200 KB gzipped)
-        # Enforce that the aggregated JS for the initial / route stays under
-        # 200 KB gzipped. next build writes a build-manifest and page stats
-        # under .next — we use the build-stats JSON produced by the analyzer.
-        # Fallback: scan page chunks and warn if the threshold is breached.
+        # Next.js 16 writes a build-manifest.json under .next.
+        # We sum the gzipped sizes of all JS chunks belonging to the / page
+        # and fail if the total exceeds 200 KB.
         run: |
           echo "=== Checking initial / route bundle size ==="
-          PAGE_STATS=".next/analyze/client.html"
-          if [ -f "$PAGE_STATS" ]; then
-            echo "Bundle report generated at $PAGE_STATS"
-          fi
-
-          # Use Next.js build output to find the / page JS size
-          BUILD_MANIFEST=".next/build-manifest.json"
-          if [ ! -f "$BUILD_MANIFEST" ]; then
-            echo "build-manifest.json not found — skipping size check"
-            exit 0
-          fi
-
-          # Sum the gzipped sizes of all JS chunks that belong to the / page
           node - <<'EOF'
           const fs = require('fs');
           const path = require('path');
           const zlib = require('zlib');
 
-          const manifest = JSON.parse(fs.readFileSync('.next/build-manifest.json', 'utf8'));
-          const rootChunks = manifest.pages?.['/'] ?? manifest.pages?.['index'] ?? [];
+          const manifestPath = '.next/build-manifest.json';
+          if (!fs.existsSync(manifestPath)) {
+            console.log('build-manifest.json not found — skipping size check');
+            process.exit(0);
+          }
+
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          const rootChunks =
+            manifest.pages?.['/'] ??
+            manifest.pages?.['index'] ??
+            [];
 
           if (rootChunks.length === 0) {
-            console.log('No chunks found for / page in build manifest — skipping check');
+            console.log('No chunks found for / page — skipping check');
             process.exit(0);
           }
 
@@ -116,16 +102,33 @@ jobs:
           const totalKB = (totalGzip / 1024).toFixed(1);
           const limitKB = 200;
 
-          console.log(`Initial / route total gzipped JS: ${totalKB} KB (limit: ${limitKB} KB)`);
+          console.log(
+            `Initial / route total gzipped JS: ${totalKB} KB (limit: ${limitKB} KB)`
+          );
 
           if (totalGzip > limitKB * 1024) {
-            console.error(`FAIL: Initial bundle ${totalKB} KB exceeds the ${limitKB} KB gzip threshold.`);
-            console.error('Ensure @stellar/* SDKs are not imported in the root layout or / route.');
+            console.error(
+              `FAIL: Initial bundle ${totalKB} KB exceeds the ${limitKB} KB gzip threshold.`
+            );
+            console.error(
+              'Ensure @stellar/* SDKs are not imported in the root layout or / route.'
+            );
             process.exit(1);
           }
 
           console.log(`PASS: Initial bundle is within the ${limitKB} KB gzip threshold.`);
           EOF
+      - name: Run Turbopack bundle analyzer
+        # next experimental-analyze generates an interactive report under .next/analyze/
+        # It exits 0 even when no webpack report is generated (Turbopack mode).
+        run: npx next experimental-analyze 2>&1 || true
+      - name: Upload bundle report artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bundle-report
+          path: .next/analyze/
+          retention-days: 14
 
   test:
     name: Unit Tests

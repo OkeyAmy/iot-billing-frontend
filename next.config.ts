@@ -1,76 +1,58 @@
-import type { NextConfig } from "next";
-import BundleAnalyzer from "@next/bundle-analyzer";
+import type { NextConfig } from 'next';
 
-const withBundleAnalyzer = BundleAnalyzer({
-  enabled: process.env.ANALYZE === "true",
-  openAnalyzer: false,
-});
-
+/**
+ * Next.js 16 uses Turbopack by default for both `next dev` and `next build`.
+ * The old `webpack()` splitChunks approach is NOT compatible with Turbopack.
+ *
+ * Code splitting strategy for Turbopack:
+ * - Heavy chunks (@stellar/*, bignumber.js) are split at the import boundary
+ *   via `next/dynamic` and route-level provider isolation (DashboardProviders).
+ * - `experimental.optimizePackageImports` tells Turbopack to apply modular
+ *   imports so only the exports actually used are included in each chunk.
+ * - turbopackScopeHoisting collapses module wrappers to reduce output size.
+ * - Bundle analysis is done via `next experimental-analyze` (Turbopack-native).
+ */
 const nextConfig: NextConfig = {
   experimental: {
-    webpackBuildWorker: true,
-  },
+    /**
+     * Automatically apply modularizeImports optimisation for these packages.
+     * Turbopack will only bundle the specific symbols imported rather than
+     * pulling in the entire barrel/index file.
+     */
+    optimizePackageImports: [
+      '@stellar/stellar-sdk',
+      '@stellar/freighter-api',
+      '@tanstack/react-query',
+    ],
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  webpack(config: any, { isServer }: { isServer: boolean }) {
-    if (!isServer) {
-      const splitChunks = config.optimization?.splitChunks ?? {};
-      const existingCacheGroups = splitChunks.cacheGroups ?? {};
-
-      config.optimization = {
-        ...config.optimization,
-        splitChunks: {
-          ...splitChunks,
-          cacheGroups: {
-            ...existingCacheGroups,
-            // Isolate Stellar/Soroban SDK into its own chunk — only loaded on
-            // wallet-connected routes (/dashboard, /escrow).
-            stellarSdk: {
-              name: "stellar-sdk",
-              test: /[\\/]node_modules[\\/](@stellar[\\/]stellar-sdk|@stellar[\\/]freighter-api|stellar-base|@stellar[\\/]stellar-base)[\\/]/,
-              chunks: "all",
-              priority: 30,
-              enforce: true,
-              reuseExistingChunk: false,
-            },
-            // bignumber.js is pulled in by the Stellar SDK and currency utils.
-            // Keep it separate to avoid polluting the main chunk.
-            bigNumber: {
-              name: "bignumber",
-              test: /[\\/]node_modules[\\/]bignumber\.js[\\/]/,
-              chunks: "all",
-              priority: 25,
-              enforce: true,
-              reuseExistingChunk: true,
-            },
-          },
-        },
-      };
-    }
-    return config;
+    // Scope hoisting collapses module wrappers, reducing bundle size.
+    // turbopackRemoveUnusedImports / turbopackRemoveUnusedExports are
+    // intentionally omitted — they prune Next.js internal ESM re-exports
+    // and break the production build in 16.2.x.
+    turbopackScopeHoisting: true,
   },
 
   async headers() {
     return [
       {
-        source: "/sw.js",
+        source: '/sw.js',
         headers: [
           {
-            key: "Cache-Control",
-            value: "public, max-age=0, must-revalidate",
+            key: 'Cache-Control',
+            value: 'public, max-age=0, must-revalidate',
           },
           {
-            key: "Service-Worker-Allowed",
-            value: "/",
+            key: 'Service-Worker-Allowed',
+            value: '/',
           },
         ],
       },
       {
-        source: "/manifest.json",
+        source: '/manifest.json',
         headers: [
           {
-            key: "Cache-Control",
-            value: "public, max-age=3600",
+            key: 'Cache-Control',
+            value: 'public, max-age=3600',
           },
         ],
       },
@@ -78,4 +60,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withBundleAnalyzer(nextConfig);
+export default nextConfig;
