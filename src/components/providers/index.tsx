@@ -1,16 +1,15 @@
 'use client';
 
 import { type ReactNode } from 'react';
-import { QueryProvider } from './QueryProvider';
-import { WalletProvider } from './WalletProvider';
 import { ThemeProvider } from './ThemeProvider';
 
+/**
+ * Root-level Providers
+ *
+ * Only ThemeProvider lives here so the initial / route stays lean.
+ * WalletProvider and QueryProvider (which pull in @stellar/* SDKs) are
+ * mounted by DashboardProviders inside the dashboard layout instead.
+ */
 export function Providers({ children }: { children: ReactNode }) {
-  return (
-    <QueryProvider>
-      <ThemeProvider>
-        <WalletProvider>{children}</WalletProvider>
-      </ThemeProvider>
-    </QueryProvider>
-  );
+  return <ThemeProvider>{children}</ThemeProvider>;
 }

@@ -1,47 +1,44 @@
 'use client';
 
-import { WalletConnector } from '@/components/wallet/WalletConnector';
-import { DeviceProvisioner } from '@/components/dashboard/DeviceProvisioner';
-import { useWallet } from '@/components/providers/WalletProvider';
+import { Suspense } from 'react';
+import dynamic from 'next/dynamic';
+
+/**
+ * The root / page lazily loads WalletConnector and DeviceProvisioner through
+ * a dynamic import that also brings in DashboardProviders (QueryProvider +
+ * WalletProvider). This keeps @stellar/* SDKs out of the initial bundle while
+ * still allowing wallet interactions on the home page.
+ */
+const HomeContent = dynamic(
+  () => import('@/components/home/HomeContent').then((m) => ({ default: m.HomeContent })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex flex-1 items-center justify-center">
+        <div className="rounded-lg border border-gray-700 bg-gray-900 p-8 text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-green-400 border-t-transparent" />
+          <p className="mt-4 text-sm text-gray-400">Loading IoT Billing Service…</p>
+        </div>
+      </div>
+    ),
+  },
+);
 
 export default function Home() {
-  const { metrics } = useWallet();
-
   return (
     <div className="flex flex-col flex-1 items-center justify-center">
-      <main className="flex flex-1 w-full max-w-6xl flex-col gap-8 py-16 px-8">
-        <header className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-green-400">IoT Billing Service</h1>
-            <p className="text-sm text-gray-400">DePIN Dashboard · Soroban Escrow Management</p>
+      <Suspense
+        fallback={
+          <div className="flex flex-1 items-center justify-center">
+            <div className="rounded-lg border border-gray-700 bg-gray-900 p-8 text-center">
+              <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-green-400 border-t-transparent" />
+              <p className="mt-4 text-sm text-gray-400">Loading IoT Billing Service…</p>
+            </div>
           </div>
-          <div className="w-72">
-            <WalletConnector />
-          </div>
-        </header>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2 rounded-lg border border-gray-700 bg-gray-900 p-6">
-            <h2 className="mb-4 text-lg font-semibold text-white">Fleet Overview</h2>
-            <p className="text-sm text-gray-400">
-              Connect your wallet to view real-time fleet telemetry and device metrics.
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-gray-700 bg-gray-900 p-6">
-            <h2 className="mb-4 text-lg font-semibold text-white">Escrow Summary</h2>
-            <p className="text-sm text-gray-400">
-              Manage deposits, withdrawals, and monitor locked balances.
-            </p>
-          </div>
-        </div>
-
-        {metrics?.isConnected && (
-          <div className="rounded-lg border border-gray-700 bg-gray-900 p-6">
-            <DeviceProvisioner walletAddress={metrics.publicKey} />
-          </div>
-        )}
-      </main>
+        }
+      >
+        <HomeContent />
+      </Suspense>
     </div>
   );
 }

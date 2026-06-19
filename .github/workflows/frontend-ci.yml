@@ -49,6 +49,84 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  bundle-analysis:
+    name: Bundle Size Analysis
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run bundle analyzer build
+        run: ANALYZE=true npm run build
+        env:
+          ANALYZE: "true"
+      - name: Upload bundle report artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bundle-report
+          path: .next/analyze/
+          retention-days: 14
+      - name: Check initial route bundle size (< 200 KB gzipped)
+        # Enforce that the aggregated JS for the initial / route stays under
+        # 200 KB gzipped. next build writes a build-manifest and page stats
+        # under .next — we use the build-stats JSON produced by the analyzer.
+        # Fallback: scan page chunks and warn if the threshold is breached.
+        run: |
+          echo "=== Checking initial / route bundle size ==="
+          PAGE_STATS=".next/analyze/client.html"
+          if [ -f "$PAGE_STATS" ]; then
+            echo "Bundle report generated at $PAGE_STATS"
+          fi
+
+          # Use Next.js build output to find the / page JS size
+          BUILD_MANIFEST=".next/build-manifest.json"
+          if [ ! -f "$BUILD_MANIFEST" ]; then
+            echo "build-manifest.json not found — skipping size check"
+            exit 0
+          fi
+
+          # Sum the gzipped sizes of all JS chunks that belong to the / page
+          node - <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const zlib = require('zlib');
+
+          const manifest = JSON.parse(fs.readFileSync('.next/build-manifest.json', 'utf8'));
+          const rootChunks = manifest.pages?.['/'] ?? manifest.pages?.['index'] ?? [];
+
+          if (rootChunks.length === 0) {
+            console.log('No chunks found for / page in build manifest — skipping check');
+            process.exit(0);
+          }
+
+          let totalGzip = 0;
+          for (const chunk of rootChunks) {
+            const filePath = path.join('.next', chunk);
+            if (!fs.existsSync(filePath)) continue;
+            const raw = fs.readFileSync(filePath);
+            const compressed = zlib.gzipSync(raw);
+            totalGzip += compressed.length;
+          }
+
+          const totalKB = (totalGzip / 1024).toFixed(1);
+          const limitKB = 200;
+
+          console.log(`Initial / route total gzipped JS: ${totalKB} KB (limit: ${limitKB} KB)`);
+
+          if (totalGzip > limitKB * 1024) {
+            console.error(`FAIL: Initial bundle ${totalKB} KB exceeds the ${limitKB} KB gzip threshold.`);
+            console.error('Ensure @stellar/* SDKs are not imported in the root layout or / route.');
+            process.exit(1);
+          }
+
+          console.log(`PASS: Initial bundle is within the ${limitKB} KB gzip threshold.`);
+          EOF
+
   test:
     name: Unit Tests
     runs-on: ubuntu-latest

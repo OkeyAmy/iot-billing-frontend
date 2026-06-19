@@ -1,7 +1,29 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useWallet } from '@/components/providers/WalletProvider';
-import { TelemetryChart } from '@/components/dashboard/TelemetryChart';
+
+/**
+ * TelemetryChart is a canvas-only component that uses requestAnimationFrame
+ * and a Web Worker — neither of which can run on the server. We dynamic-import
+ * it with ssr:false so it ships in a separate chunk that is only fetched once
+ * the "Analytics" section is actually rendered (lazy boundary).
+ */
+const TelemetryChart = dynamic(
+  () => import('@/components/dashboard/TelemetryChart').then((m) => ({ default: m.TelemetryChart })),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="flex items-center justify-center rounded border border-gray-700 bg-gray-800"
+        style={{ height: 200 }}
+        aria-label="Loading telemetry chart…"
+      >
+        <span className="text-sm text-gray-400">Loading chart…</span>
+      </div>
+    ),
+  },
+);
 
 const mockData = Array.from({ length: 100 }, (_, i) => ({
   timestamp: Date.now() - (100 - i) * 1000,
@@ -40,6 +62,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Analytics section — TelemetryChart is lazy-loaded on first render */}
       <div className="rounded-lg border border-gray-700 bg-gray-900 p-6">
         <h3 className="mb-4 text-sm font-semibold text-gray-300">Live Power Output</h3>
         <TelemetryChart data={mockData} metric="Power (W)" />
