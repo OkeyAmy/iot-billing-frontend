@@ -57,13 +57,18 @@ export function useOnlineSync() {
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-    refreshCount();
+
+    const loadInitialCount = async () => {
+      const count = await getPendingMutationsCount();
+      setPendingCount(count);
+    };
+    loadInitialCount();
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [drainQueue, refreshCount]);
+  }, [drainQueue]);
 
   return { isOnline, pendingCount, lastSync, isSyncing, forceSync: drainQueue };
 }
