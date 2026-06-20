@@ -1,11 +1,12 @@
 const DB_NAME = 'iot-billing-cache';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORES = [
   'telemetry',
   'transactions',
   'fleetViews',
   'authSession',
   'pendingTransactions',
+  'notifications',
 ] as const;
 
 type StoreName = (typeof STORES)[number];
