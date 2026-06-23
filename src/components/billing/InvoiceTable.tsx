@@ -39,9 +39,7 @@ const InvoiceRow = React.memo(function InvoiceRow({
         {formatCurrency(item.amount, item.currencyCode)}
       </td>
       <td className="px-4 py-2 text-xs text-gray-500">{item.deviceId}</td>
-      <td className="px-4 py-2 text-xs text-gray-400">
-        v{currencyVersion}
-      </td>
+      <td className="px-4 py-2 text-xs text-gray-400">v{currencyVersion}</td>
     </tr>
   );
 });
@@ -68,8 +66,9 @@ export default function InvoiceTable({ initialItems }: InvoiceTableProps) {
         for (const u of updates) {
           const idx = next.findIndex((n) => n.deviceId === u.deviceId);
           if (idx !== -1) {
+            const item = next[idx]!;
             next[idx] = {
-              ...next[idx],
+              ...item,
               amount: parseFloat(u.amount),
             };
           }
