@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useTheme } from '@/components/providers/ThemeProvider';
+import { FrameBudgetMonitor, decimationStride, type FrameBudgetReport } from '@/utils/frameBudget';
 
 interface MetricsFrame {
   timestamp: number;
@@ -17,6 +18,14 @@ interface LiveMetricsCanvasProps {
 const RING_CAPACITY = 10_000;
 const FULL_REDRAW_MS = 500;
 const RATE_WARN_THRESHOLD = 3000;
+/**
+ * Hard ceiling on points plotted per metric per frame. Drawing more points
+ * than there are horizontal pixels is wasted work the rasteriser collapses
+ * anyway; the loop additionally caps by canvas width and halves this under
+ * budget pressure (see FrameBudgetMonitor). This is the real fix for the
+ * frame-budget overruns issue #72 is concerned with.
+ */
+const MAX_POINTS_PER_METRIC = 2_000;
 
 export function LiveMetricsCanvas({ stream, metrics, height = 300 }: LiveMetricsCanvasProps) {
   const { chartPalette, prefersReducedMotion } = useTheme();
@@ -33,6 +42,14 @@ export function LiveMetricsCanvas({ stream, metrics, height = 300 }: LiveMetrics
   const lastFrameTime = useRef(0);
   const isPageVisible = useRef(true);
   const [memoryInfo, setMemoryInfo] = useState<string | null>(null);
+  const [frameStats, setFrameStats] = useState<FrameBudgetReport | null>(null);
+
+  // Per-instance frame-budget monitor. Lazily created so it survives re-renders
+  // without re-instantiating each time.
+  const monitorRef = useRef<FrameBudgetMonitor | null>(null);
+  if (monitorRef.current === null) {
+    monitorRef.current = new FrameBudgetMonitor();
+  }
 
   // Visibility change handler: pause/resume rAF loop
   useEffect(() => {
@@ -71,6 +88,16 @@ export function LiveMetricsCanvas({ stream, metrics, height = 300 }: LiveMetrics
     const interval = setInterval(measure, 30_000);
     measure();
 
+    return () => clearInterval(interval);
+  }, []);
+
+  // Dev-mode frame-budget readout: surface p95 draw time and dropped frames so
+  // regressions in the render loop are visible without DevTools.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
+    const interval = setInterval(() => {
+      setFrameStats(monitorRef.current?.report() ?? null);
+    }, 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -167,8 +194,23 @@ export function LiveMetricsCanvas({ stream, metrics, height = 300 }: LiveMetrics
       const count = countRef.current;
       if (count < 2) return;
 
-      const fullRedraw = now - lastFullRedraw.current >= FULL_REDRAW_MS;
+      const monitor = monitorRef.current;
+      monitor?.beginFrame(now);
+
+      // Budget-adaptive work shedding: when our recent draw cost is eating too
+      // much of the frame, full redraws are deferred and points are decimated
+      // harder so the loop stays within budget instead of compounding jank.
+      const underPressure = monitor?.isUnderPressure() ?? false;
+      const fullRedrawInterval = underPressure ? FULL_REDRAW_MS * 2 : FULL_REDRAW_MS;
+      const fullRedraw = now - lastFullRedraw.current >= fullRedrawInterval;
       const padding = 10;
+
+      // Never plot more points than there are horizontal pixels (the line
+      // rasteriser collapses them anyway), and halve that again under pressure.
+      const widthCap = Math.max(50, Math.floor(w));
+      const maxPoints = underPressure
+        ? Math.max(50, Math.floor(Math.min(MAX_POINTS_PER_METRIC, widthCap) / 2))
+        : Math.min(MAX_POINTS_PER_METRIC, widthCap);
 
       ctx.clearRect(0, 0, w, h);
 
@@ -178,35 +220,56 @@ export function LiveMetricsCanvas({ stream, metrics, height = 300 }: LiveMetrics
           ? chartPalette
           : ['#5ec962', '#fca50a', '#21918c', '#932667', '#fcffa4'];
 
+      const xOf = (i: number) => padding + (i / (count - 1)) * (w - 2 * padding);
+
       metrics.forEach((metric, idx) => {
         const color = colors[idx % colors.length] ?? '#ffffff';
         const { min, max } = computeRange(metric);
         const rng = max - min || 1;
+        const yOf = (v: number) => h - padding - ((v - min) / rng) * (h - 2 * padding);
 
         let startIdx = 0;
         if (!fullRedraw && lastDrawnHead.current > 0) {
           startIdx = Math.max(0, lastDrawnHead.current - 1);
         }
 
+        const stride = decimationStride(count - startIdx, maxPoints);
+
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         let first = true;
+        let lastPlotted = -1;
 
-        for (let i = startIdx; i < count; i++) {
+        for (let i = startIdx; i < count; i += stride) {
           const ringIdx = (head + i) % RING_CAPACITY;
           const frame = ring[ringIdx] as MetricsFrame;
           const v = frame.values[metric];
           if (v === undefined) continue;
 
-          const x = padding + (i / (count - 1)) * (w - 2 * padding);
-          const y = h - padding - ((v - min) / rng) * (h - 2 * padding);
+          const x = xOf(i);
+          const y = yOf(v);
 
           if (first) {
             ctx.moveTo(x, y);
             first = false;
           } else {
             ctx.lineTo(x, y);
+          }
+          lastPlotted = i;
+        }
+
+        // Decimation can step over the most recent sample; always anchor the
+        // line to it so the chart reaches "now" regardless of stride.
+        if (lastPlotted !== count - 1) {
+          const ringIdx = (head + count - 1) % RING_CAPACITY;
+          const frame = ring[ringIdx] as MetricsFrame;
+          const v = frame.values[metric];
+          if (v !== undefined) {
+            const x = xOf(count - 1);
+            const y = yOf(v);
+            if (first) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
           }
         }
 
@@ -219,6 +282,8 @@ export function LiveMetricsCanvas({ stream, metrics, height = 300 }: LiveMetrics
       }
 
       lastDrawnHead.current = head + count;
+
+      monitor?.endFrame(performance.now());
     },
     [height, metrics, computeRange, chartPalette],
   );
@@ -273,9 +338,14 @@ export function LiveMetricsCanvas({ stream, metrics, height = 300 }: LiveMetrics
   return (
     <div ref={containerRef} className="relative w-full">
       <canvas ref={canvasRef} className="block w-full" aria-label="Live metrics canvas" />
-      {memoryInfo && (
+      {(memoryInfo || frameStats) && (
         <div className="absolute bottom-1 right-2 rounded bg-black/70 px-2 py-0.5 text-[10px] text-gray-400 font-mono">
           {memoryInfo}
+          {frameStats && frameStats.sampleCount > 0 && (
+            <span className={memoryInfo ? 'ml-2' : ''}>
+              p95 {frameStats.p95.toFixed(1)}ms · dropped {frameStats.droppedFrames}
+            </span>
+          )}
         </div>
       )}
     </div>
